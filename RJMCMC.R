@@ -42,9 +42,6 @@ dkf=function(c,k,kmax,lambda){
   return(tr)
 }
 
-old.s=s_sampler(k,L)
-oldh=rgamma(k+1,shape=alpha,rate=beta)
-
 #finding the c value as defined in paper
   c=seq(0.01,1,0.01)
   min=rep(-1,31)
@@ -69,19 +66,20 @@ oldh=rgamma(k+1,shape=alpha,rate=beta)
   h4=sum(coal1>36000 )/(L-28000)
   old.h=c(h1,h2,h3,h4)
   
-nburn<-1000
-nsamp<-1000
-nthin<-20
-nits<-nburn+nthin*nsamp
+###
+#Initializing Markov chain characteristics
+###
+nburn=1000
+nsamp=1000
+nthin=20
+nits=nburn+nthin*nsamp
+ico=0
 
 sig.post<-rep(0,nsamp)
 be.post<-eta.post<-matrix(0,nrow=nsamp,ncol=100)
 K.post<-rep(0,nsamp)
 
-
-
 for(iter in 1:nits){
- 
   bk=bkf(c,k=old.K,kmax,lambda)
   dk=dkf(c,k=old.K,kmax,lambda)
   split=1-bk-dk
@@ -97,33 +95,33 @@ for(iter in 1:nits){
   if(coin<bk){
     #birth 
     new.K=old.K+1
-    ss=runif(0,L)
-    s_ind=min(which(ss<old.s))
+    ss=runif(1,min=0,max=L)
+    s_ind=min(which(old.s>ss)) 
     new.s=rep(0,old.K+1)
     new.s[1:s_ind]=old.s[1:s_ind]
     new.s[s_ind+1]=ss
-    new.s[s_ind+2:old.K+1]=old.s[s_ind+1:old.K]
-    u=runif(0,1)
+    if(s_ind!=old.K){new.s[s_ind+2:old.K+1]=old.s[(s_ind+1):old.K]}
+    u=runif(1,min=0,max=1)
    
-    a=ss-old.s[s_ind]
-    b=old.s[s_ind+1]-ss
+    a=ss-old.s[s_ind-1]
+    b=old.s[s_ind]-ss
     c=(old.s[s_ind+1]-old.s[s_ind])*log(old.h[s_ind])
     d=(1-u)/u
     
     new.h=rep(0,old.K+2)
-    new.h[1:s_ind-1]=old.h[1:s_ind]
-    new.h[s_ind+1]=exp(1/(a+b)(c+a*log(d)))
-    new.h[s_ind]=new.h[s_ind+2]/d
+    new.h[1:s_ind-1]=old.h[1:s_ind-1]
+    new.h[s_ind]=exp(1/(a+b)*(c+a*log(d)))
+    new.h[s_ind-1]=new.h[s_ind+1]/d
     new.h[s_ind+2:old.K+2]=old.h[s_ind+2:old.K+2]
     
     new.like=loglik(new.s,new.h,L)
-    prior_ratio=log(pk(k+1,lambda,kmax)/pk(k,lambda,kmax))
-                +log(2*(k+1)*(2*k+3)/L^2)
-                +log(a*b/old.s[s_ind+1]-old.s[s_ind])
-                +log(beta^alpha/gamma(alpha))
-                +(alpha-1)*log(new.h[s_ind+1]*new.h[s_ind]/old.h[s_ind])
-                -beta*(new.h[s_ind+1]+new.h[s_ind]-old.h[s_ind])
-    proposal_ratio=log(dkf(c,old.k+1,kmax,lambda)*L/(bkf(c,oldk,kmax,lambda)*(k+1)))
+    prior_ratio=log(pk(old.K+1,lambda,kmax)/pk(old.K,lambda,kmax)) +
+                log(2*(old.K+1)*(2*old.K+3)/L^2) +
+                log(a*b/(old.s[s_ind+1]-old.s[s_ind])) +
+                log(beta^alpha/gamma(alpha)) +
+                (alpha-1)*log(new.h[s_ind+1]*new.h[s_ind]/old.h[s_ind])-
+                beta*(new.h[s_ind+1]+new.h[s_ind]-old.h[s_ind])
+    proposal_ratio=log(dkf(c,old.K+1,kmax,lambda)*L/(bkf(c,old.K,kmax,lambda)*(k+1)))
     Jacobian=log((new.h[s_ind+1]+new.h[s_ind])^2/old.h[s_ind])
     
     if(log(runif(1)) < (new.like-old.like)+prior_ratio+proposal_ratio+Jacobian){
@@ -139,27 +137,27 @@ for(iter in 1:nits){
     new.K=old.K-1
     s_ind=sample(seq(1:old.K),1)
     new.s=rep(0,new.K)
-    new.s[1:s_ind-1]=old.s[1:s_ind-1]
-    new.s[s_ind:new.K]=old.s[s_ind+1:old.K]
+    new.s[1:(s_ind-1)]=old.s[1:(s_ind-1)]
+    new.s[s_ind:new.K]=old.s[(s_ind+1):old.K]
     
     new.h=rep(0,new.K+1)
     new.h[1:s_ind-1]=old.h[1:s_ind-1]
     a=(new.s[s_ind]-new.s[s_ind])
     b=(new.s[s_ind+1]-new.s[s_ind]) *log(old.h[s_ind]) # this is a good example of the indexing
     c=(new.s[s_ind]-new.s[s_ind-1]) *log(old.h[s_ind-1])
-    new.h[ind]=exp(b+c/a)
-    new.h[s_ind:new.K+1]=old.h[s_ind+1:old.K+1]
+    new.h[s_ind]=exp(b+c/a)
+    new.h[s_ind:(new.K+1)]=old.h[(s_ind+1):(old.K+1)]
       
     new.like=loglik(new.s,new.h,L)
     
-    prior_ratio=-log(pk(k+1,lambda,kmax)/pk(k,lambda,kmax))
-    -log(2*(k+1)*(2*k+3)/L^2)
-    -log((old.s[s_ind]-old.s[s_ind-1])*(old.s[s_ind+1]-old.s[s_ind])/(new.s[s_ind]-new.s[s_ind-1]))
-    -log(beta^alpha/gamma(alpha))
-    -(alpha-1)*log(old.h[s_ind+1]*old.h[s_ind]/new.h[s_ind])
-    +beta*(old.h[s_ind+1]+old.h[s_ind]-new.h[s_ind])
+    prior_ratio=-log(pk(k+1,lambda,kmax)/pk(k,lambda,kmax))-
+    log(2*(k+1)*(2*k+3)/L^2)-
+    log((old.s[s_ind]-old.s[s_ind-1])*(old.s[s_ind+1]-old.s[s_ind])/(new.s[s_ind]-new.s[s_ind-1]))-
+    log(beta^alpha/gamma(alpha))-
+    (alpha-1)*log((old.h[s_ind+1]*old.h[s_ind])/new.h[s_ind])+
+    beta*(old.h[s_ind+1]+old.h[s_ind]-new.h[s_ind])
     
-    proposal_ratio=-log(dkf(c,old.k+1,kmax,lambda)*L/(bkf(c,old.k,kmax,lambda)*(k+1)))
+    proposal_ratio=-log(dkf(c,old.K+1,kmax,lambda)*L/(bkf(c,old.K,kmax,lambda)*(k+1)))
     Jacobian=-log((old.h[s_ind+1]+old.h[s_ind])^2/new.h[s_ind])
     
     if(log(runif(1)) < ((new.like-old.like)+prior_ratio+proposal_ratio+Jacobian)){
@@ -176,12 +174,11 @@ for(iter in 1:nits){
     #change in height
     h_ind=sample(seq(0:old.K),1)
     new.h=old.h
-    new.h[h_ind+1]=old.h[h_ind+1]*exp(runif(-1/2,1/2))
+    new.h[h_ind+1]=old.h[h_ind+1]*exp(runif(1,min=-1/2,max=1/2))
     new.like=loglik(old.s,new.h,L)
     
-    if(log(runif(1)) < (new.like-old.like)+alpha*log(new.h[h_ind+1]/new.h[h_ind+1])-beta*(new.h[h_ind+1]-new.h[h_ind+1]))
+    if(log(runif(1)) < (new.like-old.like)+alpha*log(new.h[h_ind+1]/new.h[h_ind+1])-beta*(new.h[h_ind+1]-new.h[h_ind+1])){
       old.h=new.h
-      
       old.like=new.like
     }
     
@@ -198,75 +195,12 @@ for(iter in 1:nits){
     }
   }
   
-  #Shift one of the knots
-  if(old.K >0){
-    new.eta<-old.eta
-    evec<-c(0,old.eta,xmax)
-    k<-sample(1:old.K,size=1)
-    new.eta[k]<-runif(1,evec[k],evec[k+2])
-    new.Xmat<-rep(1,n)
-    for(k in 1:old.K){
-      new.Xmat<-cbind(new.Xmat,(x-new.eta[k])^r*(x>new.eta[k]))
-    }
-    XTX<-t(new.Xmat)%*%new.Xmat
-    post.L<-XTX+old.prior.L
-    post.var<-solve(post.L)
-    post.mean<-post.var %*% (t(new.Xmat) %*% y + old.prior.L %*% old.prior.be0)
-    new.c<-(ysq + t(old.prior.be0) %*% old.prior.L %*% old.prior.be0 -
-              t(post.mean) %*% post.L %*% post.mean)[1,1]
-    new.marg.like<-0.5*log(det(old.prior.L))-0.5*log(det(XTX+old.prior.L))-
-      0.5*(n+prior.a)*log(0.5*(prior.b+new.c))
-    new.prior.eta<-eta.density(new.eta,old.K,xmax)
-    if(log(runif(1)) < (new.marg.like+new.prior.eta) -
-       (old.marg.like+old.prior.eta)){
-      old.eta<-new.eta
-      old.Xmat<-new.Xmat
-      old.c<-new.c
-      old.marg.like<-new.marg.like
-      old.prior.eta<-new.prior.eta
-    }
-  }
-  
   if(iter > nburn & iter %% nthin == 0){
     ico<-ico+1
-    #Sample the parameters given old.eta
-    XTX<-t(old.Xmat)%*%old.Xmat
-    post.L<-XTX+old.prior.L
-    post.var<-solve(post.L)
-    post.mean<-post.var %*% (t(old.Xmat) %*% y + old.prior.L %*% old.prior.be0)
-    old.be<-rmvn(1,mu=post.mean,sigma=old.sig^2*post.var)
-    
-    old.yfit<-old.Xmat %*% t(old.be)
-    old.ssq<-sum((y-old.yfit)^2)
-    post.a<-prior.a+n
-    post.b<-prior.b+old.ssq
-    
-    old.sig<-1/sqrt(rgamma(1,post.a/2,post.b/2))
-    
-    old.c<-(ysq + t(old.prior.be0) %*% old.prior.L %*% old.prior.be0 -
-              t(post.mean) %*% post.L %*% post.mean)[1,1]
-    
-    old.marg.like<-0.5*log(det(old.prior.L))-0.5*log(det(XTX+old.prior.L))-
-      0.5*(n+prior.a)*log(0.5*(prior.b+old.c))
-    
-    be.post[ico,1:(old.K+1)]<-old.be
-    sig.post[ico]<-old.sig
+
+    h.post[ico,1:(old.K+1)]=old.h
+    s.post[ico,1:(old.K)]=old.s
     K.post[ico]<-old.K
-    eta.post[ico,1:old.K]<-old.eta
-  }
-  
-  if(iter %% 1000 ==0){
-    Xm<-rep(1,nx)
-    for(k in 1:old.K){
-      Xm<-cbind(Xm,(xvec-old.eta[k])^r*(xvec>old.eta[k]))
-    }
-    XTX<-t(old.Xmat)%*%old.Xmat
-    post.L<-XTX+old.prior.L
-    post.var<-solve(post.L)
-    post.mean<-post.var %*% (t(old.Xmat) %*% y + old.prior.L %*% old.prior.be0)
-    old.be<-rmvn(1,mu=post.mean,sigma=old.sig^2*post.var)
-    y.fit.b<-Xm %*% t(old.be)
-    lines(xvec,y.fit.b,col='red')
   }
 }
 
