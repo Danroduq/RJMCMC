@@ -10,6 +10,7 @@ alpha=1
 beta=200
 c=1
 K=10
+#processing the coal mining dates to be number of days since origin 1981/01/01
 tempdate=lapply(coal,FUN=date_decimal)
 tempdate=sapply(tempdate,FUN=as_date)
 coal1=difftime(as.Date(tempdate,format="%Y-%m-%d",origin="1970-01-01"),"1851-01-01", units = c("days"))
@@ -19,15 +20,11 @@ pk=function(k,lambda,kmax){
   pk=dpois(k,lambda)/ppois(kmax,lambda)
   return(pk)
 }
-s_sampler=function(k,L){
-  samp=runif(2*k+1,min=0,max=L)
-  samp=samp[order(samp)][seq(2,2*k+1,2)]
-  return(samp)
-}
 evaluate=function(x,s,h){
   ind=min(which(x<=c(0,s,L)))
   return(h[ind-1])
 }
+#vectorizing the evaluate function
 evaluatev=Vectorize(evaluate,vectorize.args=c("x"))
 loglik=function(s,h,L){
   sapply(coal1,FUN=evaluatev,s=s,h=h)
