@@ -35,11 +35,13 @@ loglik=function(s,h,L){
   return(loglikhood)
 }
 bkf=function(c,k,kmax,lambda){
-  tr=c*min(1,pk(k+1,lambda,kmax)/pk(k,lambda,kmax))
+  if(k!=kmax){tr=c*min(1,pk(k+1,lambda,kmax)/pk(k,lambda,kmax))}
+  else{tr=0}
   return(tr)
 }
 dkf=function(c,k,kmax,lambda){
-  tr=c*min(1,pk(k-1,lambda,kmax)/pk(k,lambda,kmax))
+  if(k!=0){ tr=c*min(1,pk(k-1,lambda,kmax)/pk(k,lambda,kmax))}
+  else{tr=0}
   return(tr)
 }
 
@@ -59,79 +61,45 @@ oldh=rgamma(k+1,shape=alpha,rate=beta)
   }
   c=min(min)
 
-eta.density<-function(evec,Kv,xm){
-  dvec<-diff(c(0,evec,xm))
-  return(lgamma(2*Kv+2)+sum(log(dvec))-(2*Kv+1)*log(xm))
-}
-
-y<-bootstrap::cholost$y[order(cholost$z)]
-x<-bootstrap::cholost$z[order(cholost$z)]
-n<-length(y)
-xmax<-100
-
-prior.lam<-0.01
-prior.a<-10
-prior.b<-100
-prior.gam<-10
-
-old.K<-5  #This is the number of breaks, number of segments is K+1
-eta<-sort(runif(2*old.K+1,0,100))
-old.eta<-eta[2*(1:old.K)]
-
-old.Xmat<-rep(1,n)
-for(k in 1:old.K){
-  old.Xmat<-cbind(old.Xmat,(x-old.eta[k])^r*(x>old.eta[k]))
-}
-
-old.np<-ncol(old.Xmat)
-old.prior.L<-prior.lam*diag(1,old.np)
-old.prior.be0<-rep(0,old.np)
-
-XTX<-t(old.Xmat)%*%old.Xmat
-be.hat<-solve(XTX) %*% (t(old.Xmat) %*% y)
-y.fit<-old.Xmat %*% be.hat
-sigsq.hat<-sum((y-y.fit)^2)/(n-old.np)
-sig.hat<-sqrt(sigsq.hat)
-
-old.be<-as.numeric(be.hat)
-old.yfit<-old.Xmat %*% old.be
-old.sig<-sig.hat
-
-ysq<-t(y) %*% y
-old.c<-(ysq + t(old.prior.be0) %*% old.prior.L %*% old.prior.be0 -
-          t(post.mean) %*% post.L %*% post.mean)[1,1]
-
-old.marg.like<-0.5*log(det(old.prior.L))-0.5*log(det(XTX+old.prior.L))-
-  0.5*(n+prior.a)*log(0.5*(prior.b+old.c))
-
-old.prior.K<-dpois(old.K,prior.gam,log=T)
-
-old.prior.eta<-eta.density(old.eta,old.K,xmax)
-
+####
+# Initializing Values
+####
+  old.K=3
+  old.s=c(13000,28000,36000)#from visual inspection
+  h1=sum(coal1<=13000)/13000
+  h2=sum(coal1>13000 & coal1<=28000)/(28000-13000)
+  h3=sum(coal1>28000 & coal1<=36000)/(36000-28000)
+  h4=sum(coal1>36000 )/(L-28000)
+  old.h=c(h1,h2,h3,h4)
+  
 nburn<-1000
-nsamp<-10000
+nsamp<-1000
 nthin<-20
 nits<-nburn+nthin*nsamp
 
 sig.post<-rep(0,nsamp)
 be.post<-eta.post<-matrix(0,nrow=nsamp,ncol=100)
 K.post<-rep(0,nsamp)
-ico<-0
 
-par(mar=c(4,4,2,0))
-plot(x,y,type='p',pch=19,cex=0.5)
+
+
 for(iter in 1:nits){
  
-  bk=bkf(c,k,kmax,lambda)
-  dk=dkf(c,k,kmax,lambda)
+  bk=bkf(c,k=old.K,kmax,lambda)
+  dk=dkf(c,k=old.K,kmax,lambda)
   split=1-bk-dk
+  if(old.K!=0){
   pik=split/2
   etak=split/2
+  }else{
+    pik=0
+    etak=split
+  }
   
   coin=runif(1)
   if(coin<bk){
     #birth 
-    
+    new.K=old.K+1
     ss=runif(0,L)
     s_ind=min(which(ss<old.s))
     new.s=rep(0,old.K+1)
@@ -140,59 +108,64 @@ for(iter in 1:nits){
     new.s[s_ind+2:old.K+1]=old.s[s_ind+1:old.K]
     u=runif(0,1)
    
+    a=ss-old.s[s_ind]
+    b=old.s[s_ind+1]-ss
+    c=(old.s[s_ind+1]-old.s[s_ind])*log(old.h[s_ind])
+    d=(1-u)/u
     
-    c=(old.s[s_ind+1]-old.s)*log(old.h[s_ind])
-    hp1=exp(old.s-old.s)*loglog((1-u)/u)) 
-    new.like=loglik(s,h,L)
-    if(log(runif(1)) < (new.like+new.prior+new.proposal + new.Jacobian) -
-       (old.like+old.prior+old.proposal)){
+    new.h=rep(0,old.K+2)
+    new.h[1:s_ind-1]=old.h[1:s_ind]
+    new.h[s_ind+1]=exp(1/(a+b)(c+a*log(d)))
+    new.h[s_ind]=new.h[s_ind+2]/d
+    new.h[s_ind+2:old.K+2]=old.h[s_ind+2:old.K+2]
+    
+    new.like=loglik(new.s,new.h,L)
+    prior_ratio=log(pk(k+1,lambda,kmax)/pk(k,lambda,kmax))
+                +log(2*(k+1)*(2*k+3)/L^2)
+                +log(a*b/old.s[s_ind+1]-old.s[s_ind])
+                +log(beta^alpha/gamma(alpha))
+                +(alpha-1)*log(new.h[s_ind+1]*new.h[s_ind]/old.h[s_ind])
+                -beta*(new.h[s_ind+1]+new.h[s_ind]-old.h[s_ind])
+    proposal_ratio=log(dkf(c,old.k+1,kmax,lambda)*L/(bkf(c,oldk,kmax,lambda)*(k+1)))
+    Jacobian=log((new.h[s_ind+1]+new.h[s_ind])^2/old.h[s_ind])
+    
+    if(log(runif(1)) < (new.like-old.like)+prior_ratio+proposal_ratio+Jacobian){
       
       old.K<-new.K
       old.s=new.s
       old.h=new.h
       
       old.like=new.like
-      old.prior=new.prior
-      old.proposal=new.proposal
-      old.Jacobian=new.Jacobian
     }
-    
   }else if (coin<=bk+dk){
     #Death
-    if(old.K == 0) break #Prior prob on fewer than 0 breaks is zero
+    new.K=old.K-1
+    s_ind=sample(seq(1:old.K),1)
+    new.s=rep(0,new.K)
+    new.s[1:s_ind-1]=old.s[1:s_ind-1]
+    new.s[s_ind:new.K]=old.s[s_ind+1:old.K]
     
-    new.K<-old.K-1
-    k<-sample(1:old.K,size=1)
-    new.eta<-old.eta[-k]
-    if(new.K == 0){
-      new.Xmat<-matrix(1,ncol=1,nrow=n)
-    }else{
-      new.Xmat<-rep(1,n)
-      for(k in 1:new.K){
-        new.Xmat<-cbind(new.Xmat,(x-new.eta[k])^r*(x>new.eta[k]))
-      }
-    }	
-    new.np<-ncol(new.Xmat)
-    new.prior.L<-prior.lam*diag(1,new.np)
-    new.prior.be0<-rep(0,new.np)
-    XTX<-t(new.Xmat)%*%new.Xmat
-    post.L<-XTX+new.prior.L
-    post.var<-solve(post.L)
-    post.mean<-post.var %*% (t(new.Xmat) %*% y + new.prior.L %*% new.prior.be0)
-    new.c<-(ysq + t(new.prior.be0) %*% new.prior.L %*% new.prior.be0 -
-              t(post.mean) %*% post.L %*% post.mean)[1,1]
+    new.h=rep(0,new.K+1)
+    new.h[1:s_ind-1]=old.h[1:s_ind-1]
+    a=(new.s[s_ind]-new.s[s_ind])
+    b=(new.s[s_ind+1]-new.s[s_ind]) *log(old.h[s_ind]) # this is a good example of the indexing
+    c=(new.s[s_ind]-new.s[s_ind-1]) *log(old.h[s_ind-1])
+    new.h[ind]=exp(b+c/a)
+    new.h[s_ind:new.K+1]=old.h[s_ind+1:old.K+1]
+      
+    new.like=loglik(new.s,new.h,L)
     
-    new.marg.like<-0.5*log(det(new.prior.L))-0.5*log(det(XTX+new.prior.L))-
-      0.5*(n+prior.a)*log(0.5*(prior.b+new.c))
+    prior_ratio=-log(pk(k+1,lambda,kmax)/pk(k,lambda,kmax))
+    -log(2*(k+1)*(2*k+3)/L^2)
+    -log((old.s[s_ind]-old.s[s_ind-1])*(old.s[s_ind+1]-old.s[s_ind])/(new.s[s_ind]-new.s[s_ind-1]))
+    -log(beta^alpha/gamma(alpha))
+    -(alpha-1)*log(old.h[s_ind+1]*old.h[s_ind]/new.h[s_ind])
+    +beta*(old.h[s_ind+1]+old.h[s_ind]-new.h[s_ind])
     
-    new.prior.K<-dpois(new.K,prior.gam,log=T)
-    new.prior.eta<-eta.density(new.eta,new.K,xmax)
+    proposal_ratio=-log(dkf(c,old.k+1,kmax,lambda)*L/(bkf(c,old.k,kmax,lambda)*(k+1)))
+    Jacobian=-log((old.h[s_ind+1]+old.h[s_ind])^2/new.h[s_ind])
     
-    evec<-c(0,old.eta,xmax)
-    new.q<--log(evec[k+2]-evec[k])
-    
-    if(log(runif(1)) < (new.like+new.prior+new.proposal + new.Jacobian) -
-                          (old.like+old.prior+old.proposal)){
+    if(log(runif(1)) < ((new.like-old.like)+prior_ratio+proposal_ratio+Jacobian)){
       old.K<-new.K
       old.s=new.s
       old.h=new.h
