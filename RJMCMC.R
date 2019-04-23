@@ -28,7 +28,7 @@ evaluate=function(x,s,h){
 evaluatev=Vectorize(evaluate,vectorize.args=c("x"))
 loglik=function(s,h,L){
   sapply(coal1,FUN=evaluatev,s=s,h=h)
-  loglikhood=sum(log(h))-sum(diff(c(0,s,L))*h)
+  loglikhood=sum(log(h))-sum(diff(s)*h)
   return(loglikhood)
 }
 bkf=function(c,k,kmax,lambda){
@@ -59,7 +59,7 @@ dkf=function(c,k,kmax,lambda){
 # Initializing Values
 ####
   old.K=3
-  old.s=c(13000,28000,36000)#from visual inspection
+  old.s=c(0,13000,28000,36000,L)#from visual inspection
   h1=sum(coal1<=13000)/13000
   h2=sum(coal1>13000 & coal1<=28000)/(28000-13000)
   h3=sum(coal1>28000 & coal1<=36000)/(36000-28000)
@@ -96,23 +96,45 @@ for(iter in 1:nits){
     #birth 
     new.K=old.K+1
     ss=runif(1,min=0,max=L)
-    s_ind=min(which(old.s>ss)) 
+    #updating the s
     new.s=rep(0,old.K+1)
-    new.s[1:s_ind]=old.s[1:s_ind]
-    new.s[s_ind+1]=ss
-    if(s_ind!=old.K){new.s[s_ind+2:old.K+1]=old.s[(s_ind+1):old.K]}
+    if (old.s[1]>ss){ #first gap
+      new.s[1]=ss
+      new.s[2:new.K]=old.s[1:old.K]
+    }else if(old.s[old.K]>ss){ #if middle gap
+      s_ind=min(which(old.s>ss)) 
+      new.s[1:(s_ind-1)]=old.s[(1:s_ind-1)]
+      new.s[s_ind]=ss
+      new.s[s_ind+1:old.K+1]=old.s[s_ind:old.K]
+    }else{ #if the last gap
+      new.s[1:old.K]=old.s[1:old.K]
+      new.s[new.K]=ss
+    }
+
+    #updating the h
+    #first must generate the new h
     u=runif(1,min=0,max=1)
-   
     a=ss-old.s[s_ind-1]
     b=old.s[s_ind]-ss
-    c=(old.s[s_ind+1]-old.s[s_ind])*log(old.h[s_ind])
+    c=(old.s[s_ind]-old.s[s_ind-1])*log(old.h[s_ind])
     d=(1-u)/u
     
-    new.h=rep(0,old.K+2)
-    new.h[1:s_ind-1]=old.h[1:s_ind-1]
-    new.h[s_ind]=exp(1/(a+b)*(c+a*log(d)))
-    new.h[s_ind-1]=new.h[s_ind+1]/d
-    new.h[s_ind+2:old.K+2]=old.h[s_ind+2:old.K+2]
+    if (old.s[1]>ss){ #first gap
+      new.h=rep(0,old.K+1+1)
+      new.h[1:s_ind-1]=old.h[1:s_ind-1]
+      new.h[s_ind+1]=exp(1/(a+b)*(c+a*log(d)))
+      new.h[s_ind]=new.h[s_ind+1]/d
+      new.h[s_ind+2:new.k+1]=old.h[s_ind+1:old.K+1]
+    }else if(old.s[old.K]>ss){ #if middle gap
+      new.h=rep(0,old.K+1+1)
+      new.h[1:s_ind-1]=old.h[1:s_ind-1]
+      new.h[s_ind+1]=exp(1/(a+b)*(c+a*log(d)))
+      new.h[s_ind]=new.h[s_ind+1]/d
+      new.h[s_ind+2:new.k+1]=old.h[s_ind+1:old.K+1]
+    }else{ #if the last gap
+      new.s[1:old.K]=old.s[1:old.K]
+      new.s[new.K]=ss
+    }
     
     new.like=loglik(new.s,new.h,L)
     prior_ratio=log(pk(old.K+1,lambda,kmax)/pk(old.K,lambda,kmax)) +
