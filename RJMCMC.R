@@ -3,7 +3,6 @@ rm(list = ls())
 library(boot)#library  that contains the coal miner data
 library(lubridate)#library that changes decimal dates
 
-
 lambda=3
 kmax=30
 alpha=1
@@ -16,18 +15,20 @@ coal1=difftime(as.Date(tempdate,format="%Y-%m-%d",origin="1970-01-01"),"1851-01-
 L=as.numeric(difftime("1962/12/31" ,"1851/01/01", units = c("days")))
 
 pk=function(k,lambda,kmax){
-  pk=dpois(k,lambda)/ppois(kmax,lambda)
+  #pk=dpois(k,lambda)/ppois(kmax,lambda)
+  pk=dpois(k,lambda)
   return(pk)
 }
 evaluate=function(x,s,h){
-  ind=min(which(x<=c(0,s,L)))
+  #x=coal1[191,]
+  ind=min(which(s>=x))
   return(h[ind-1])
 }
 #vectorizing the evaluate function
 evaluatev=Vectorize(evaluate,vectorize.args=c("x"))
 loglike=function(s,h,L){
-  sapply(coal1,FUN=evaluatev,s=s,h=h)
-  loglikhood=sum(log(h))-sum(diff(s)*h)
+  h_eval=sapply(coal1,FUN=evaluatev,s=s,h=h)
+  loglikhood=sum(log(h_eval))-sum(diff(s)*h)
   return(loglikhood)
 }
 bkf=function(c,k,kmax,lambda){
@@ -68,9 +69,9 @@ dkf=function(c,k,kmax,lambda){
 ###
 #Initializing Markov chain characteristics
 ###
-nburn=0
-nsamp=100000
-nthin=1
+nburn=1000
+nsamp=1000
+nthin=20
 nits=nburn+nthin*nsamp
 ico=0
 
@@ -217,5 +218,6 @@ for(iter in 1:nits){
     K.post[ico]=old.K
   }
 }
+hist(K.post,freq=FALSE)
 
-
+plot(s.post[which(K.post==2),])
